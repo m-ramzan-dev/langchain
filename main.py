@@ -1,7 +1,8 @@
 from dotenv import load_dotenv
+import langchain_core
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
-from openai import APIError, AuthenticationError, RateLimitError
+from langchain_ollama import ChatOllama
 
 load_dotenv()
 
@@ -30,29 +31,39 @@ def main():
         template = summary_template
     )
 
-    llm = ChatOpenAI(temperature=0, model = "gpt-4o-mini")
+    #llm = ChatOpenAI(temperature=0, model = "gpt-4o-mini")
+    llm = ChatOllama(model="gemma3:4b", temperature=0.0)
     chain = summary_prompt_template | llm
     
     try:
         response = chain.invoke(input={"information": information})
         print("mtag inside try block")
-        print(response.content)
-        
-    except RateLimitError as e:
-        if "billing" in str(e) or "quota" in str(e):
-            print("Billing issue: check your payment method and credits at platform.openai.com/settings/billing")
-        else:
-            print("Rate limited: too many requests, slow down or retry with backoff")
-        print("mtag inside RateLimitError block")
+        print(response)
 
-    except AuthenticationError:
-        print("Invalid API key: check your .env file")
-
-    except APIError as e:
-        print(f"OpenAI API error: {e}")
+    except langchain_core.exceptions.OutputParserException as e:
+        print(f"Output parsing failed: {e}")
 
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        # LangChain wraps most provider errors here
+        error_msg = str(e).lower()
+        
+        if "connection" in error_msg or "connect" in error_msg:
+            print("Model server not reachable (Ollama not running?)")
+        
+        elif "404" in error_msg or "not found" in error_msg:
+            print("Model not found — check model name or run `ollama pull <model>`")
+        
+        elif "rate limit" in error_msg or "quota" in error_msg:
+            print("Rate limited or quota exceeded")
+        
+        elif "auth" in error_msg or "api key" in error_msg or "unauthorized" in error_msg:
+            print("Authentication failed — check your API key")
+        
+        elif "timeout" in error_msg:
+            print("Request timed out")
+        
+        else:
+            print(f"LLM error [{type(e).__name__}]: {e}")
 
 if __name__ == "__main__":
     main()
